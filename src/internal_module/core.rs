@@ -174,6 +174,34 @@ pub fn init_global_function(ctx: &mut Context) {
     global.set("nextTick", ctx.wrap_function("nextTick", next_tick).into());
     global.set("exit", ctx.wrap_function("exit", os_exit).into());
     global.set("env", env_object(ctx).into());
+
+    fn require_impl(ctx: &mut Context, _this_val: JsValue, argv: &[JsValue]) -> JsValue {
+        let name = match argv.first() {
+            Some(JsValue::String(s)) => s.as_str().to_string(),
+            _ => return JsValue::Exception(ctx.throw_type_error("require() needs a string module name")),
+        };
+        let val = ctx.load_module(&name);
+        if matches!(&val, JsValue::Exception(_)) {
+            return val;
+        }
+        if name == "fs" {
+            let watch_fn = val
+                .get("watch")
+                .or_else(|| val.get("default").and_then(|d| d.get("watch")));
+            if let Some(w) = watch_fn {
+                let mut obj = ctx.new_object();
+                obj.set("watch", w);
+                return obj.into();
+            }
+        }
+        if let Some(d) = val.get("default") {
+            if matches!(&d, JsValue::Object(_)) {
+                return d;
+            }
+        }
+        val
+    }
+    global.set("require", ctx.wrap_function("require", require_impl).into());
 }
 
 fn env_object(ctx: &mut Context) -> JsObject {

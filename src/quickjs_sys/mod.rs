@@ -82,7 +82,10 @@ unsafe extern "C" fn module_loader(
     }
     let module_name = module_name.unwrap();
 
-    let mut path = std::path::PathBuf::from(module_name);
+    // node: alias: "node:fs" -> "fs", "node:path" -> "path", so we load modules/fs.js, modules/path.js
+    let logical_name = module_name.strip_prefix("node:").unwrap_or(module_name);
+
+    let mut path = std::path::PathBuf::from(logical_name);
     let ext = path
         .extension()
         .unwrap_or_default()
@@ -104,11 +107,29 @@ unsafe extern "C" fn module_loader(
     }
 
     if !path.is_file() {
-        let modules_dir = std::env::var("QJS_LIB").unwrap_or("./modules".to_string());
-        path = std::path::PathBuf::from(modules_dir).join(path);
+        let modules_dir = std::env::var("QJS_LIB").unwrap_or_else(|_| "./modules".to_string());
+        path = std::path::PathBuf::from(&modules_dir).join(&path);
     }
 
-    let code = std::fs::read(&path);
+    let mut code = std::fs::read(&path);
+    // node_modules fallback: bare id (no '/', no leading '.') -> try QJS_LIB/node_modules/<name>.js then ./node_modules/<name>.js
+    if code.is_err() && !logical_name.contains('/') && !logical_name.starts_with('.') {
+        let modules_dir = std::env::var("QJS_LIB").unwrap_or_else(|_| "./modules".to_string());
+        let node_modules_path =
+            std::path::PathBuf::from(&modules_dir).join("node_modules").join(path.file_name().unwrap_or_default());
+        if node_modules_path.is_file() {
+            code = std::fs::read(&node_modules_path);
+            if code.is_ok() {
+                path = node_modules_path;
+            }
+        }
+        if code.is_err() {
+            let cwd_node_modules = std::path::PathBuf::from("node_modules").join(path.file_name().unwrap_or_default());
+            if cwd_node_modules.is_file() {
+                code = std::fs::read(&cwd_node_modules);
+            }
+        }
+    }
     if code.is_err() {
         JS_ThrowReferenceError(
             ctx,
@@ -475,6 +496,17 @@ impl Context {
 
     pub fn eval_module_str(&mut self, code: String, filename: &str) {
         self.eval_buf(code.into_bytes(), filename, JS_EVAL_TYPE_MODULE);
+    }
+
+    /// Load a CommonJS-style module by name (e.g. "fs", "path") using the same module_loader.
+    /// Returns the module namespace value or throws. Used to implement global `require`.
+    pub fn load_module(&mut self, name: &str) -> JsValue {
+        unsafe {
+            let base = make_c_string(".");
+            let name_c = make_c_string(name);
+            let val = JS_LoadModule(self.ctx, base.as_ptr(), name_c.as_ptr());
+            JsValue::from_qjs_value(self.ctx, val)
+        }
     }
 
     pub fn new_function<F: JsFn>(&mut self, name: &str) -> JsFunction {

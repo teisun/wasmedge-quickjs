@@ -1,3 +1,4 @@
+#[cfg(feature = "tls")]
 mod certs;
 mod poll;
 pub mod wasi_fs;
@@ -16,6 +17,7 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
+#[cfg(feature = "tls")]
 use rustls::OwnedTrustAnchor;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 pub use wasi_sock::nslookup;

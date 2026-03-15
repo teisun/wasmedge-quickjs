@@ -2578,16 +2578,80 @@ function readdirSync(path, options) {
     }
 }
 
-function watch() {
-    throw new Error(`'watch' is unsupported`);
+function watch(path, options, listener) {
+    path = getValidatedPath(path, 'path');
+    if (typeof options === 'function') {
+        listener = options;
+        options = {};
+    }
+    options = options ?? {};
+    if (!globalThis.__pi_fs_watch_listeners) globalThis.__pi_fs_watch_listeners = new Map();
+    let watchId = null;
+    if (typeof globalThis.__pi_host_call === 'function') {
+        try {
+            const req = JSON.stringify({ module: 'node', method: 'fs/watch', params: { path, options: options || {} } });
+            const resp = globalThis.__pi_host_call(req);
+            const out = typeof resp === 'string' ? JSON.parse(resp) : resp;
+            const id = (out && out.data && out.data.watchId != null) ? out.data.watchId : (out && out.watchId);
+            if (id != null) {
+                watchId = id;
+                globalThis.__pi_fs_watch_listeners.set(watchId, { listener, path });
+            }
+        } catch (e) {
+            if (listener) process.nextTick(() => listener(e));
+            return { close() {} };
+        }
+    }
+    const id = watchId;
+    return {
+        close() {
+            if (id != null && globalThis.__pi_fs_watch_listeners) globalThis.__pi_fs_watch_listeners.delete(id);
+            if (typeof globalThis.__pi_host_call === 'function') {
+                try {
+                    globalThis.__pi_host_call(JSON.stringify({ module: 'node', method: 'fs/unwatch', params: { watchId: id } }));
+                } catch (_) {}
+            }
+        }
+    };
 }
 
-function unwatch() {
-    throw new Error(`'unwatch' is unsupported`);
+function unwatch(path, listener) {
+    path = getValidatedPath(path, 'path');
+    if (!globalThis.__pi_fs_watch_listeners) return;
+    for (const [watchId, v] of globalThis.__pi_fs_watch_listeners) {
+        if (v.path === path && (listener == null || v.listener === listener)) {
+            globalThis.__pi_fs_watch_listeners.delete(watchId);
+            if (typeof globalThis.__pi_host_call === 'function') {
+                try {
+                    globalThis.__pi_host_call(JSON.stringify({ module: 'node', method: 'fs/unwatchFile', params: { watchId } }));
+                } catch (_) {}
+            }
+            if (listener != null) break;
+        }
+    }
 }
 
-function watchFile() {
-    throw new Error(`'watchFile' is unsupported`);
+function watchFile(path, options, listener) {
+    path = getValidatedPath(path, 'path');
+    if (typeof options === 'function') {
+        listener = options;
+        options = {};
+    }
+    options = options ?? {};
+    if (!globalThis.__pi_fs_watch_listeners) globalThis.__pi_fs_watch_listeners = new Map();
+    if (typeof globalThis.__pi_host_call === 'function') {
+        try {
+            const req = JSON.stringify({ module: 'node', method: 'fs/watchFile', params: { path, options: options || {} } });
+            const resp = globalThis.__pi_host_call(req);
+            const out = typeof resp === 'string' ? JSON.parse(resp) : resp;
+            const id = (out && out.data && out.data.watchId != null) ? out.data.watchId : (out && out.watchId);
+            if (id != null && listener) {
+                globalThis.__pi_fs_watch_listeners.set(id, { listener, path });
+            }
+        } catch (e) {
+            if (listener) process.nextTick(() => listener(e));
+        }
+    }
 }
 
 function getOwnPropertyValueOrDefault(options, key, defaultValue) {
