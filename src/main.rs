@@ -1,5 +1,7 @@
 #![allow(dead_code, unused_imports, unused_must_use)]
 
+mod host_call;
+
 use std::borrow::{Borrow, BorrowMut};
 use wasmedge_quickjs::*;
 
@@ -28,6 +30,8 @@ async fn main() {
 
     let r = rt
         .async_run_with_context(Box::new(|ctx| {
+            host_call::register_pi_host_call(ctx);
+
             let (file_path, mut rest_arg) = args_parse();
             let code = std::fs::read_to_string(&file_path);
             match code {

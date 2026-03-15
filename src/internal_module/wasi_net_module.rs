@@ -1,6 +1,8 @@
 use std::io::Write;
 
-use crate::event_loop::{AsyncTcpConn, AsyncTcpServer, AsyncTlsConn};
+use crate::event_loop::{AsyncTcpConn, AsyncTcpServer};
+#[cfg(feature = "tls")]
+use crate::event_loop::AsyncTlsConn;
 use crate::*;
 
 #[cfg(feature = "tls")]
